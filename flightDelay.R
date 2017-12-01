@@ -1,0 +1,198 @@
+# Flight Delay
+
+TrainData = read.csv("./input/train.csv")
+TestData = read.csv("./input/test.csv")
+
+
+# Data Cleaning Task
+
+train.class = rep(0, nrow(TrainData))
+
+for (i in 1:nrow(TrainData)){
+  TrainData$ARRIVAL_DELAY[i] = ifelse(TrainData$ARRIVAL_DELAY[i] >= 10, 1, 0)
+}
+
+
+# test.class = rep(0, nrow(TestData))
+
+for (i in 1:nrow(TestData)){
+  TestData$ARRIVAL_DELAY[i] = ifelse(TestData$ARRIVAL_DELAY[i] >= 10, 1, 0)
+}
+
+# train.class = as.factor(as.numeric(TrainData$ARRIVAL_DELAY[i] >= 10))
+# test.class = as.factor(as.numeric(TestData$ARRIVAL_DELAY[i] >= 10))
+
+
+# Clean the time attributes
+TrainData$SCHEDULED_ARRIVAL_HOUR = rep(0, nrow(TrainData))
+TestData$SCHEDULED_ARRIVAL_HOUR = rep(0, nrow(TestData))
+
+TrainData$SCHEDULED_DEPARTURE_HOUR =rep(0, nrow(TrainData))
+TestData$SCHEDULED_DEPARTURE_HOUR = rep(0, nrow(TestData))
+
+
+
+for (i in 1:nrow(TrainData)){
+  if (TrainData$SCHEDULED_DEPARTURE[i] < 10)
+  {
+    TrainData$SCHEDULED_DEPARTURE_HOUR[i] = 0
+  }
+  else if(TrainData$SCHEDULED_DEPARTURE[i] >= 10 & TrainData$SCHEDULED_DEPARTURE[i] <100){
+    TrainData$SCHEDULED_DEPARTURE_HOUR[i] = TrainData$SCHEDULED_DEPARTURE[i] %/% 10
+  }
+  else{
+    TrainData$SCHEDULED_DEPARTURE_HOUR[i] = TrainData$SCHEDULED_DEPARTURE[i] %/% 100
+  }
+  
+  
+  
+  if (TrainData$SCHEDULED_ARRIVAL[i] < 10)
+  {
+    TrainData$SCHEDULED_ARRIVAL_HOUR[i] = 0
+  }
+  else if(TrainData$SCHEDULED_ARRIVAL[i] >= 10 & TrainData$SCHEDULED_ARRIVAL[i] <100){
+    TrainData$SCHEDULED_ARRIVAL_HOUR[i] = TrainData$SCHEDULED_ARRIVAL[i] %/% 10
+  }
+  else{
+    TrainData$SCHEDULED_ARRIVAL_HOUR[i] = TrainData$SCHEDULED_ARRIVAL[i] %/% 100
+  }
+  
+}
+
+
+for (i in 1:nrow(TestData)){
+  if (TestData$SCHEDULED_DEPARTURE[i] < 10)
+  {
+    TestData$SCHEDULED_DEPARTURE_HOUR[i] = 0
+  }
+  else if(TestData$SCHEDULED_DEPARTURE[i] >= 10 & TestData$SCHEDULED_DEPARTURE[i] <100){
+    TestData$SCHEDULED_DEPARTURE_HOUR[i] = TestData$SCHEDULED_DEPARTURE[i] %/% 10
+  }
+  else{
+    TestData$SCHEDULED_DEPARTURE_HOUR[i] = TestData$SCHEDULED_DEPARTURE[i] %/% 100
+  }
+  
+  
+  
+  if (TestData$SCHEDULED_ARRIVAL[i] < 10)
+  {
+    TestData$SCHEDULED_ARRIVAL_HOUR[i] = 0
+  }
+  else if(TestData$SCHEDULED_ARRIVAL[i] >= 10 & TestData$SCHEDULED_ARRIVAL[i] <100){
+    TestData$SCHEDULED_ARRIVAL_HOUR[i] = TestData$SCHEDULED_ARRIVAL[i] %/% 10
+  }
+  else{
+    TestData$SCHEDULED_ARRIVAL_HOUR[i] = TestData$SCHEDULED_ARRIVAL[i] %/% 100
+  }
+  
+}
+
+atts.train = c("MONTH", 'DAY_OF_WEEK', "SCHEDULED_DEPARTURE", "DISTANCE",
+               "SCHEDULED_DEPARTURE_HOUR", "SCHEDULED_ARRIVAL_HOUR", "ARRIVAL_DELAY")
+
+atts.test = c("MONTH", 'DAY_OF_WEEK', "SCHEDULED_DEPARTURE", "DISTANCE","SCHEDULED_DEPARTURE_HOUR",
+              "SCHEDULED_ARRIVAL_HOUR")
+
+train.data = TrainData[atts.train]
+test.data = TestData[atts.test]
+
+train.data$ARRIVAL_DELAY = as.factor(train.data$ARRIVAL_DELAY)
+
+t = train.data[1:30000, ]
+
+library(party)
+library(tree)
+library(rpart)
+library(randomForest)
+# Implement Random forest
+t2 = train.data[30001:45000, ]
+
+# train.rf = randomForest(ARRIVAL_DELAY ~. ,data = train.data, importance = T, proxiimity = T)
+# train.t = rpart(ARRIVAL_DELAY ~ DISTANCE + SCHEDULED_DEPARTURE_HOUR, data = train.data)
+train.rf <- randomForest(ARRIVAL_DELAY ~ ., data=train.data, importance=TRUE,
+                         proximity=TRUE, ntree = 300)
+p = predict(train.rf, test.data)
+
+predict = data.frame(ID = 0:(length(p) - 1), ARRIVAL_DELAY = p)
+write.csv(predict, "./output/submission.csv", row.names = F)
+
+#  train.rf <- randomForest(ARRIVAL_DELAY ~ ., data=t, importance=TRUE,
+#                           proximity=TRUE, ntree = 300)
+#  p = predict(train.rf, t2)
+#  
+#  predict = data.frame(ID = 0:(length(p) - 1), ARRIVAL_DELAY = p)
+
+
+
+dh = summarise(group_by(t, SCHEDULED_DEPARTURE_HOUR, ARRIVAL_DELAY), freq = n())
+
+frq_dh = rep(0,length(unique(dh$SCHEDULED_DEPARTURE_HOUR)))
+
+
+for (i in unique(dh$SCHEDULED_DEPARTURE_HOUR)) {
+  s = sum(dh[dh$SCHEDULED_DEPARTURE_HOUR == i, ]$freq)
+  
+  s_0 = dh[dh$SCHEDULED_DEPARTURE_HOUR == i & dh$ARRIVAL_DELAY == 0, ]$freq / s
+  s_1 = dh[dh$SCHEDULED_DEPARTURE_HOUR == i & dh$ARRIVAL_DELAY == 1, ]$freq / s
+  
+  frq_dh[dh$SCHEDULED_DEPARTURE_HOUR == i & dh$ARRIVAL_DELAY == 0] = s_0
+  frq_dh[dh$SCHEDULED_DEPARTURE_HOUR == i & dh$ARRIVAL_DELAY == 1] = s_1
+  
+}
+
+dh['freq_dh'] = frq_dh
+
+
+g1 = ggplot(dh, aes(x = SCHEDULED_DEPARTURE_HOUR, y = frq_dh, fill = ARRIVAL_DELAY)) + geom_bar( stat = "identity", alpha = 0.4)
+
+
+ah = summarise(group_by(t, SCHEDULED_ARRIVAL_HOUR, ARRIVAL_DELAY), freq = n())
+
+frq_ah = rep(0,length(unique(ah$SCHEDULED_ARRIVAL_HOUR)))
+
+
+for (i in unique(ah$SCHEDULED_ARRIVAL_HOUR)) {
+  s = sum(ah[ah$SCHEDULED_ARRIVAL_HOUR == i, ]$freq)
+  
+  s_0 = ah[ah$SCHEDULED_ARRIVAL_HOUR == i & ah$ARRIVAL_DELAY == 0, ]$freq / s
+  s_1 = ah[ah$SCHEDULED_ARRIVAL_HOUR == i & ah$ARRIVAL_DELAY == 1, ]$freq / s
+  
+  frq_ah[ah$SCHEDULED_ARRIVAL_HOUR == i & ah$ARRIVAL_DELAY == 0] = s_0
+  frq_ah[ah$SCHEDULED_ARRIVAL_HOUR == i & ah$ARRIVAL_DELAY == 1] = s_1
+  
+}
+
+ah['frq_ah'] = frq_ah
+
+
+g1 = ggplot(dh, aes(x = SCHEDULED_DEPARTURE_HOUR, y = frq_dh, fill = ARRIVAL_DELAY)) + geom_bar( stat = "identity", alpha = 0.4)
+g2 = ggplot(ah, aes(x = SCHEDULED_ARRIVAL_HOUR, y = frq_ah, fill = ARRIVAL_DELAY)) + geom_bar( stat = "identity", alpha = 0.4)
+
+###------------------- Distance ----------------------
+
+dis = t
+dis = dis %>% mutate(DISTANCE = cut(DISTANCE, breaks = seq(1, max(DISTANCE) + 10, 300))) %>% group_by(DISTANCE,ARRIVAL_DELAY) %>% summarise(freq = n())
+
+frq_dis = rep(0,length((dis$DISTANCE)))
+
+
+for (i in unique(dis$DISTANCE)) {
+  if (is.na(i)) next
+  s = sum(dis[dis$DISTANCE == i, ]$freq, na.rm = T)
+  
+  s_0 = dis[dis$DISTANCE == i & dis$ARRIVAL_DELAY == 0, ]$freq[1] / s
+  s_1 = dis[dis$DISTANCE == i & dis$ARRIVAL_DELAY == 1, ]$freq[1] / s
+  
+  if (!is.na(s_0))
+    frq_dis[dis$DISTANCE == i & dis$ARRIVAL_DELAY == 0] = s_0
+  
+  if (!is.na(s_1))
+    frq_dis[dis$DISTANCE == i & dis$ARRIVAL_DELAY == 1] = s_1
+  
+}
+
+dis['frq_dis'] = frq_dis
+
+g3= ggplot(dis, aes(x = DISTANCE, y = frq_dis, fill = ARRIVAL_DELAY)) + geom_bar( stat = "identity", alpha = 0.4)+
+  geom_text(aes( label = format(round(frq_dis, 2), nsmall = 2)), vjust = -0.2))
+g3
